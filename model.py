@@ -5,12 +5,12 @@ import torch.nn.functional as F
 from receptive_field import compute_proto_layer_rf_info_v2
 
 import itertools
+import sys
 
 class ProtoTSNet(nn.Module):
 
-    def __init__(self, cnn_base, num_features, ts_sample_len, prototype_shape,
-                 proto_layer_rf_info, num_classes, init_weights=True,
-                 prototype_activation_function='log'):
+    def __init__(self, cnn_base, for_deepproblog, num_features, ts_sample_len, prototype_shape,
+                 num_classes, init_weights=True, prototype_activation_function='log'):
 
         super(ProtoTSNet, self).__init__()
         self.features = cnn_base
@@ -21,6 +21,7 @@ class ProtoTSNet(nn.Module):
         self.num_prototypes = prototype_shape[0]
         self.num_classes = num_classes
         self.epsilon = 1e-4
+        self.for_deepproblog = for_deepproblog
 
         # prototype_activation_function could be 'log', 'linear',
         # or a generic function that converts distance to similarity score
@@ -38,7 +39,13 @@ class ProtoTSNet(nn.Module):
         for j in range(self.num_prototypes):
             self.prototype_class_identity[j, j // num_prototypes_per_class] = 1
 
-        self.proto_layer_rf_info = proto_layer_rf_info
+        self.proto_layer_rf_info = compute_proto_layer_rf_info_v2(
+            img_size=ts_sample_len,
+            layer_filter_sizes=[],
+            layer_strides=[],
+            layer_paddings=[],
+            prototype_kernel_size=prototype_shape[2],
+        )
 
         self.add_on_layers = nn.Sequential(
             nn.Conv1d(
@@ -86,10 +93,13 @@ class ProtoTSNet(nn.Module):
 
         return distances
 
-    def prototype_distances(self, x):
+    def prototype_distances(self, x, proto_num: int = None):
+        if self.for_deepproblog:
+            x.unsqueeze_(0)
         conv_features = self.conv_features(x)
+        # TODO optimize for deepproblog
         distances = self._l2_convolution(conv_features)
-        return distances
+        return distances[:, proto_num:proto_num + 1, :]
 
     def distance_2_similarity(self, distances):
         if self.prototype_activation_function == 'log':
@@ -99,13 +109,20 @@ class ProtoTSNet(nn.Module):
         else:
             return self.prototype_activation_function(distances)
 
-    def forward(self, x):
-        distances = self.prototype_distances(x)
+    def forward(self, x, proto: str = None):
+        proto_num = int(proto.functor[1:])
+        distances = self.prototype_distances(x, proto_num)
         # global min pooling
         min_distances = -F.max_pool1d(-distances,
                                       kernel_size=(distances.size()[2],))
-        min_distances = min_distances.view(-1, self.num_prototypes)
+        if proto is None:
+            min_distances = min_distances.view(-1, self.num_prototypes)
         prototype_activations = self.distance_2_similarity(min_distances)
+        if self.for_deepproblog:
+            ret = prototype_activations[0, 0]
+            # return ret
+            # print(f'torch.cat((ret, 1 - ret)): {torch.cat((ret, 1 - ret))}')
+            return torch.cat((ret, 1 - ret))
         logits = self.last_layer(prototype_activations)
         return logits, min_distances
 
@@ -137,27 +154,3 @@ class ProtoTSNet(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
         self.set_last_layer_incorrect_connection(incorrect_class_connection=-0.5)
-
-
-def construct_PPNet(cnn_base, num_features, ts_sample_len,
-                    prototype_shape, num_classes,
-                    prototype_activation_function='log'):
-    layer_filter_sizes, layer_strides, layer_paddings = [], [], []
-
-    proto_layer_rf_info = compute_proto_layer_rf_info_v2(
-        img_size=ts_sample_len,
-        layer_filter_sizes=layer_filter_sizes,
-        layer_strides=layer_strides,
-        layer_paddings=layer_paddings,
-        prototype_kernel_size=prototype_shape[2],
-    )
-    return ProtoTSNet(
-        cnn_base=cnn_base,
-        num_features=num_features,
-        ts_sample_len=ts_sample_len,
-        prototype_shape=prototype_shape,
-        proto_layer_rf_info=proto_layer_rf_info,
-        num_classes=num_classes,
-        init_weights=True,
-        prototype_activation_function=prototype_activation_function,
-    )

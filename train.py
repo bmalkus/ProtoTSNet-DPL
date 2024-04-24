@@ -15,7 +15,7 @@ from pathlib import Path
 import os
 import torch
 import shutil
-import model
+from model import ProtoTSNet
 import json
 from datasets_utils import TrainTestDS
 from train_utils import BestModelCheckpointer
@@ -43,11 +43,11 @@ def train_prototsnet(dataset: TrainTestDS, experiment_dir, device,
     else:
         models_dir = None
         proto_dir = None
-    
+
     prototype_shape = (protos_per_class*ds_info.num_classes, proto_features, proto_len_latent)
 
     prototype_activation_function = 'log'
-    
+
     train_loader = torch.utils.data.DataLoader(
         dataset.train, batch_size=train_batch_size, shuffle=True,
         num_workers=0, pin_memory=False)
@@ -59,15 +59,17 @@ def train_prototsnet(dataset: TrainTestDS, experiment_dir, device,
         val_loader = torch.utils.data.DataLoader(
             dataset.val, batch_size=test_batch_size, shuffle=False,
             num_workers=0, pin_memory=False)
-        
+
     # construct the model
-    ptsnet = model.construct_PPNet(cnn_base=encoder,
-                                  num_features=ds_info.features,
-                                  ts_sample_len=ds_info.ts_len,
-                                  prototype_shape=prototype_shape,
-                                  num_classes=ds_info.num_classes,
-                                  prototype_activation_function=prototype_activation_function)
-    
+    ptsnet = ProtoTSNet(
+        cnn_base=encoder,
+        num_features=ds_info.features,
+        ts_sample_len=ds_info.ts_len,
+        prototype_shape=prototype_shape,
+        num_classes=ds_info.num_classes,
+        prototype_activation_function=prototype_activation_function,
+    )
+
     learning_rates = {
         EpochType.JOINT: {
             'features': features_lr,
@@ -82,10 +84,10 @@ def train_prototsnet(dataset: TrainTestDS, experiment_dir, device,
             'add_on_layers': 1e-3
         }
     }
-    
+
     if push_epochs is None:
         push_epochs = range(0, num_epochs, 20)
-    
+
     overall_best_checkpointer = BestModelCheckpointer(stat_name='cross_ent_val', mode='min', model_save_path=models_dir, model_name='overall_best')
     push_only_best_checkpointer = BestModelCheckpointer(stat_name='cross_ent_val', mode='min', add_save_cond=lambda t, m: t.curr_epoch_type in [EpochType.PUSH, EpochType.LAST_LAYER], model_save_path=models_dir, model_name='push_best')
     trainer = ProtoTSNetTrainer(
@@ -108,13 +110,13 @@ def train_prototsnet(dataset: TrainTestDS, experiment_dir, device,
         ] + ([] if custom_checkpointers is None else custom_checkpointers),
         log=log,
     )
-    
+
     if save_files:
         shutil.rmtree(proto_dir)
         os.makedirs(proto_dir, exist_ok=True)
 
     trainer.train()
-    
+
     torch.save(ptsnet.state_dict(), models_dir / f'last-epoch-state-dict.pth')
     torch.save(ptsnet, models_dir / f'last-epoch.pth')
     trainer.dump_stats(experiment_dir / 'stats.json')
