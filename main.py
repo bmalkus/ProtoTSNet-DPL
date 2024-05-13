@@ -112,7 +112,7 @@ class ArtificialProtosQueries(DPLDataset):
         return self.dataset_len * self.num_classes
 
 protos_per_class = 1
-latent_features = 32
+latent_features = 8
 
 print('Preparing ProtoTSNet...')
 autoencoder = RegularConvEncoder(num_features=3, latent_features=latent_features, padding='same')
@@ -138,20 +138,37 @@ model.set_engine(ExactEngine(model))
 train_dataset = ArtificialProtosDataset(100)
 model.add_tensor_source("train", train_dataset)
 train_queries = ArtificialProtosQueries(train_dataset, "train")
-train_loader = DataLoader(train_queries, 1, False)
+train_loader = DataLoader(train_queries, 1, True)
 
 test_dataset = ArtificialProtosDataset(50)
 model.add_tensor_source("test", test_dataset)
 test_queries = ArtificialProtosQueries(test_dataset, "test")
 
 print("Training...")
-train = train_model(model, train_loader, 20, log_iter=100, profile=0)
+train = train_model(model, train_loader, 10, log_iter=100, profile=0, train_queries=train_queries)
 # model.save_state('./snapshots/initial_model.pth')
 # train.logger.comment(json.dumps(model.get_hyperparameters()))
 # train.logger.comment(
     # "Accuracy {}".format(get_confusion_matrix(model, test_queries, verbose=1).accuracy())
 # )
+# model.eval()
+for i in [0, 46]:
+    q1 = train_queries.to_query(i)
+    q2 = train_queries.to_query(i+1)
+    print(q1)
+    # print(q2)
+    print(model.solve([q1]))
+    # print(model.solve([q2]))
+for q in test_queries.to_queries():
+    print(q)
+    print(model.solve([q]))
+# model.solve([train_queries.to_query(0)])
+# model.solve([train_queries.to_query(11)])
+# model.solve([train_queries.to_query(25)])
+# model.solve([train_queries.to_query(37)])
+# get_fact_accuracy(model, train_queries, verbose=1)
 get_fact_accuracy(model, test_queries, verbose=1)
-train.logger.write_to_file("log/initial.log")
+# get_fact_accuracy(model, train_queries, verbose=1)
+# train.logger.write_to_file("log/initial.log")
 
 

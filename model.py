@@ -94,11 +94,13 @@ class ProtoTSNet(nn.Module):
         return distances
 
     def prototype_distances(self, x, proto_num: int = None):
-        if self.for_deepproblog:
-            x.unsqueeze_(0)
+        # if self.for_deepproblog:
+        #     x.unsqueeze_(0)
         conv_features = self.conv_features(x)
         # TODO optimize for deepproblog
         distances = self._l2_convolution(conv_features)
+        if proto_num is None:
+            return distances
         return distances[:, proto_num:proto_num + 1, :]
 
     def distance_2_similarity(self, distances):
@@ -110,21 +112,53 @@ class ProtoTSNet(nn.Module):
             return self.prototype_activation_function(distances)
 
     def forward(self, x, proto: str = None):
-        proto_num = int(proto.functor[1:])
-        distances = self.prototype_distances(x, proto_num)
+        # x = x[0]
+        # print(f'x shape: {x.shape}')
+        x.unsqueeze_(0)
+        if proto is not None:
+            proto_num = int(proto.functor[1:])
+            distances = self.prototype_distances(x, proto_num)
+        else:
+            distances = self.prototype_distances(x)
         # global min pooling
         min_distances = -F.max_pool1d(-distances,
                                       kernel_size=(distances.size()[2],))
         if proto is None:
             min_distances = min_distances.view(-1, self.num_prototypes)
         prototype_activations = self.distance_2_similarity(min_distances)
-        if self.for_deepproblog:
+        if self.for_deepproblog and proto is not None:
             ret = prototype_activations[0, 0]
+            ret = torch.sigmoid(ret)
             # return ret
             # print(f'torch.cat((ret, 1 - ret)): {torch.cat((ret, 1 - ret))}')
             return torch.cat((ret, 1 - ret))
+            # return torch.cat((ret, ))
+        else:
+            # print(f'prototype_activations: {prototype_activations}, shape: {prototype_activations.shape}')
+            # print(f'torch.softmax(prototype_activations, dim=1): {torch.softmax(prototype_activations, dim=1)}')
+            # print(f'x: {x}, shape: {x.shape}')
+            return torch.softmax(prototype_activations, dim=1).view(2)
         logits = self.last_layer(prototype_activations)
         return logits, min_distances
+
+    # def forward(self, x, proto: str = None):
+    #     proto_num = int(proto.functor[1:])
+    #     distances = self.prototype_distances(x, proto_num)
+    #     # global min pooling
+    #     min_distances = -F.max_pool1d(-distances,
+    #                                   kernel_size=(distances.size()[2],))
+    #     if proto is None:
+    #         min_distances = min_distances.view(-1, self.num_prototypes)
+    #     prototype_activations = self.distance_2_similarity(min_distances)
+    #     if self.for_deepproblog:
+    #         ret = prototype_activations[0, 0]
+    #         ret = torch.sigmoid(ret)
+    #         # return ret
+    #         # print(f'torch.cat((ret, 1 - ret)): {torch.cat((ret, 1 - ret))}')
+    #         return torch.cat((ret, 1 - ret))
+    #         # return torch.cat((ret, ))
+    #     logits = self.last_layer(prototype_activations)
+    #     return logits, min_distances
 
     def push_forward(self, x):
         '''this method is needed for the pushing operation'''
