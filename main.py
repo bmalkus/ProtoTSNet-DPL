@@ -152,16 +152,16 @@ train = train_model(model, train_loader, 10, log_iter=100, profile=0, train_quer
     # "Accuracy {}".format(get_confusion_matrix(model, test_queries, verbose=1).accuracy())
 # )
 # model.eval()
-for i in [0, 46]:
-    q1 = train_queries.to_query(i)
-    q2 = train_queries.to_query(i+1)
-    print(q1)
-    # print(q2)
-    print(model.solve([q1]))
-    # print(model.solve([q2]))
-for q in test_queries.to_queries():
-    print(q)
-    print(model.solve([q]))
+# for i in [0, 46]:
+#     q1 = train_queries.to_query(i)
+#     q2 = train_queries.to_query(i+1)
+#     print(q1)
+#     # print(q2)
+#     print(model.solve([q1]))
+#     # print(model.solve([q2]))
+# for q in test_queries.to_queries():
+#     print(q)
+#     print(model.solve([q]))
 # model.solve([train_queries.to_query(0)])
 # model.solve([train_queries.to_query(11)])
 # model.solve([train_queries.to_query(25)])

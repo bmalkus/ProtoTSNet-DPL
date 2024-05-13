@@ -1,5 +1,5 @@
-% nn(ptsnet, [TS, P], H, [1])::has_proto(TS, P).
-nn(ptsnet, [TS], P, [p0, p1])::has_proto(TS, P).
+nn(ptsnet, [TS, P], H, [1])::has_proto(TS, P).
+% nn(ptsnet, [TS], P, [p0, p1])::has_proto(TS, P).
 % p::has_proto(TS, P, 1); (1-p)::has_proto(TS, P, 0).
 % Uczenie sieci z warstwą gestą i spięcie z DPL
 % sprawdzić prawdopodobieństwa w czasie uczenia

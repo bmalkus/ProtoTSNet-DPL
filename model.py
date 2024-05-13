@@ -128,11 +128,11 @@ class ProtoTSNet(nn.Module):
         prototype_activations = self.distance_2_similarity(min_distances)
         if self.for_deepproblog and proto is not None:
             ret = prototype_activations[0, 0]
-            ret = torch.sigmoid(ret)
+            ret = torch.tanh(ret)
             # return ret
             # print(f'torch.cat((ret, 1 - ret)): {torch.cat((ret, 1 - ret))}')
-            return torch.cat((ret, 1 - ret))
-            # return torch.cat((ret, ))
+            # return torch.cat((ret, 1 - ret))
+            return torch.cat((ret, ))
         else:
             # print(f'prototype_activations: {prototype_activations}, shape: {prototype_activations.shape}')
             # print(f'torch.softmax(prototype_activations, dim=1): {torch.softmax(prototype_activations, dim=1)}')
