@@ -151,7 +151,7 @@ train = train_model(model, train_loader, 10, log_iter=100, profile=0, train_quer
 # train.logger.comment(
     # "Accuracy {}".format(get_confusion_matrix(model, test_queries, verbose=1).accuracy())
 # )
-# model.eval()
+model.eval()
 # for i in [0, 46]:
 #     q1 = train_queries.to_query(i)
 #     q2 = train_queries.to_query(i+1)
