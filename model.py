@@ -75,14 +75,6 @@ class ProtoTSNet(nn.Module):
         x = self.add_on_layers(x)
         return x
     
-    # def eval(self):
-        # for l in self.features:
-        #     if not isinstance(l, nn.BatchNorm1d):
-        #         print(f'evaluating {l}')
-        #         l.eval()
-        # self.features.eval()
-        # print('ProtoTSNet.eval()')
-
     def _l2_convolution(self, x):
         # apply self.prototype_vectors as l2-convolution filters on input x
         x2 = x ** 2
@@ -107,6 +99,8 @@ class ProtoTSNet(nn.Module):
         conv_features = self.conv_features(x)
         # TODO optimize for deepproblog
         distances = self._l2_convolution(conv_features)
+        if proto_num is None:
+            return distances
         return distances[:, proto_num:proto_num + 1, :]
 
     def distance_2_similarity(self, distances):
@@ -118,23 +112,17 @@ class ProtoTSNet(nn.Module):
             return self.prototype_activation_function(distances)
 
     def forward(self, x, proto: str = None):
-        proto_num = int(proto.functor[1:])
+        proto_num = int(proto.functor[1:]) if proto is not None else None
         distances = self.prototype_distances(x, proto_num)
-        # print(distances)
         # global min pooling
         min_distances = -F.max_pool1d(-distances,
                                       kernel_size=(distances.size()[2],))
         if proto is None:
             min_distances = min_distances.view(-1, self.num_prototypes)
         prototype_activations = self.distance_2_similarity(min_distances)
-        # prototype_activations = torch.log((1 / (distances + self.epsilon)))
         if self.for_deepproblog:
             ret = prototype_activations[0, 0]
             ret = F.tanh(ret)
-            # ret = F.sigmoid(ret)
-            # return ret
-            # print(f'torch.cat((ret, 1 - ret)): {torch.cat((ret, 1 - ret))}')
-            # print(ret)
             return torch.cat((ret, ))
         logits = self.last_layer(prototype_activations)
         return logits, min_distances
@@ -163,7 +151,6 @@ class ProtoTSNet(nn.Module):
                     nn.init.constant_(m.bias, 0)
 
             elif isinstance(m, nn.BatchNorm1d):
-                continue
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 

@@ -54,33 +54,7 @@ class ArtificialProtosQueries(DPLDataset):
         self.phase = phase
         self.dataset = dataset
         self.dataset_len = len(dataset)
-        self.num_classes = 2 # len(set([dataset.get_label(i) for i in range(self.dataset_len)]))
-
-    # def to_query(self, i: int) -> Query:
-    #     ds_entry = i
-    #     correct_cls = self.dataset.get_label(ds_entry)
-
-    #     ts_term = Term(f'ts{i}')
-    #     q = Query(
-    #         Term(
-    #             'is_class',
-    #             ts_term,
-    #             Term(f'c{correct_cls}')
-    #         ),
-    #         {
-    #             ts_term: Term(
-    #                 "tensor",
-    #                 Term(
-    #                     self.phase,
-    #                     Constant(ds_entry),
-    #                 ),
-    #             )
-    #         }
-    #     )
-    #     return q
-
-    # def __len__(self):
-    #     return self.dataset_len
+        self.num_classes = len(set([dataset.get_label(i) for i in range(self.dataset_len)]))
 
     def to_query(self, i: int) -> Query:
         
@@ -138,7 +112,7 @@ model.set_engine(ExactEngine(model))
 train_dataset = ArtificialProtosDataset(100)
 model.add_tensor_source("train", train_dataset)
 train_queries = ArtificialProtosQueries(train_dataset, "train")
-train_loader = DataLoader(train_queries, 1, False)
+train_loader = DataLoader(train_queries, 1, True)
 
 test_dataset = ArtificialProtosDataset(30)
 model.add_tensor_source("test", test_dataset)

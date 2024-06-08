@@ -166,13 +166,10 @@ class RegularConvEncoder(nn.Module):
 
         self.encoder = nn.Sequential(
             nn.Conv1d(in_channels=num_features, out_channels=32, kernel_size=7, padding=padding),
-            # nn.BatchNorm1d(32, momentum=None, affine=False),
             nn.ReLU(),
             nn.Conv1d(in_channels=32, out_channels=32, kernel_size=5, padding=padding),
-            # nn.BatchNorm1d(32, momentum=None, affine=False),
             nn.ReLU(),
             nn.Conv1d(in_channels=32, out_channels=latent_features, kernel_size=3, padding=padding),
-            # nn.BatchNorm1d(latent_features, momentum=None, affine=False),
             nn.ReLU()
         )
         
