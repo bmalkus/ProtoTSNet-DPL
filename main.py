@@ -1,7 +1,4 @@
-from scipy import signal
-import numpy as np
 import torch
-import json
 
 from deepproblog.dataset import Dataset as DPLDataset, DataLoader
 from deepproblog.query import Query
@@ -14,40 +11,8 @@ from problog.logic import Term, Constant, list2term
 
 from model import ProtoTSNet
 from autoencoder import RegularConvEncoder
+from artificial_datasets_DPL import ArtificialProtosDataset, ArtificialProtosDatasetRandomShift
 
-class ArtificialProtosDataset():
-    def __init__(self, N, feature_noise_power=0.1, randomize_right_side=False):
-        self.data = []
-        x = np.linspace(0, 100, 100)
-        for _ in range(N):
-            label = np.random.randint(0, 2)
-            ts = np.zeros((3, 100))
-            if label == 0:
-                ts[0, :40] = signal.sawtooth(x[:40] / (1+1))
-                ts[1, :40] = signal.square(x[:40] / (2+1))
-            else:
-                ts[0, :40] = signal.square(x[:40] / (1+1))
-                ts[1, :40] = signal.sawtooth(x[:40] / (2+1))
-            if np.random.choice([0, 1]) == 0:
-                ts[2, :40] = signal.square(np.random.choice([-1, 1]) * x[:40] / 3)
-            else:
-                ts[2, :40] = signal.sawtooth(np.random.choice([-1, 1]) * x[:40] / 3)
-            for i in range(3):
-                if randomize_right_side:
-                    ts[i, 40:] = np.sin(x[40:] / (np.random.randint(0, 4)+i+1)) / 3
-                else:
-                    ts[i, 40:] = np.sin(x[40:] / (i+1)) / 3
-                ts[i, :] += np.random.normal(0, feature_noise_power, 100)
-            self.data.append((ts.astype('float32'), label))
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        return torch.tensor(self.data[int(idx[0])][0])
-    
-    def get_label(self, idx):
-        return self.data[idx][1]
 
 class ArtificialProtosQueries(DPLDataset):
     def __init__(self, dataset: ArtificialProtosDataset, phase: str):
@@ -55,6 +20,7 @@ class ArtificialProtosQueries(DPLDataset):
         self.dataset = dataset
         self.dataset_len = len(dataset)
         self.num_classes = len(set([dataset.get_label(i) for i in range(self.dataset_len)]))
+        print(f'Detected number of classes: {self.num_classes}')
 
     def to_query(self, i: int) -> Query:
         
@@ -87,17 +53,19 @@ class ArtificialProtosQueries(DPLDataset):
 
 protos_per_class = 1
 latent_features = 32
+num_features = 2
+num_classes = 2
 
 print('Preparing ProtoTSNet...')
-autoencoder = RegularConvEncoder(num_features=3, latent_features=latent_features, padding='same')
+autoencoder = RegularConvEncoder(num_features=num_features, latent_features=latent_features, padding='same')
 encoder = autoencoder.encoder
 net = ProtoTSNet(
     cnn_base=encoder,
     for_deepproblog=True,
-    num_features=3,
+    num_features=num_features,
     ts_sample_len=100,
-    prototype_shape=(protos_per_class*2, latent_features, 20),
-    num_classes=2,
+    prototype_shape=(protos_per_class*num_classes, latent_features, 20),
+    num_classes=num_classes,
     prototype_activation_function='log'
 )
 
@@ -109,17 +77,17 @@ model = Model("proto_logic.pl", [dpl_net])
 model.set_engine(ExactEngine(model))
 # model.set_engine(ApproximateEngine(model, 1, ApproximateEngine.geometric_mean, exploration=False))
 
-train_dataset = ArtificialProtosDataset(100)
+train_dataset = ArtificialProtosDatasetRandomShift(200, num_feat=num_features, classes=num_classes)
 model.add_tensor_source("train", train_dataset)
 train_queries = ArtificialProtosQueries(train_dataset, "train")
 train_loader = DataLoader(train_queries, 1, True)
 
-test_dataset = ArtificialProtosDataset(30)
+test_dataset = ArtificialProtosDatasetRandomShift(30, num_feat=num_features, classes=num_classes)
 model.add_tensor_source("test", test_dataset)
 test_queries = ArtificialProtosQueries(test_dataset, "test")
 
 print("Training...")
-train = train_model(model, train_loader, 10, log_iter=100, profile=0)
+train = train_model(model, train_loader, 20, log_iter=100, profile=0)
 model.save_state('./snapshots/initial_model.pth')
 # train.logger.comment(json.dumps(model.get_hyperparameters()))
 # train.logger.comment(
