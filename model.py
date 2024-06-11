@@ -9,7 +9,7 @@ import sys
 
 class ProtoTSNet(nn.Module):
 
-    def __init__(self, cnn_base, for_deepproblog, num_features, ts_sample_len, prototype_shape,
+    def __init__(self, cnn_base, for_deepproblog, num_features, ts_sample_len, proto_num, latent_features, proto_len_latent,
                  num_classes, init_weights=True, prototype_activation_function='log'):
 
         super(ProtoTSNet, self).__init__()
@@ -17,8 +17,8 @@ class ProtoTSNet(nn.Module):
         self.num_features = num_features
         self.ts_sample_len = ts_sample_len
 
-        self.prototype_shape = prototype_shape
-        self.num_prototypes = prototype_shape[0]
+        self.prototype_shape = (proto_num, latent_features, proto_len_latent)
+        self.num_prototypes = self.prototype_shape[0]
         self.num_classes = num_classes
         self.epsilon = 1e-4
         self.for_deepproblog = for_deepproblog
@@ -44,7 +44,7 @@ class ProtoTSNet(nn.Module):
             layer_filter_sizes=[],
             layer_strides=[],
             layer_paddings=[],
-            prototype_kernel_size=prototype_shape[2],
+            prototype_kernel_size=self.prototype_shape[2],
         )
 
         self.add_on_layers = nn.Sequential(

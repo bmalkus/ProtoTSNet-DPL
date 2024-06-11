@@ -5,13 +5,14 @@ from deepproblog.query import Query
 from deepproblog.network import Network
 from deepproblog.model import Model
 from deepproblog.engines import ExactEngine
-from deepproblog.train import train_model
+from deepproblog.train import TrainObject
 from deepproblog.evaluate import get_confusion_matrix, get_fact_accuracy
 from problog.logic import Term, Constant, list2term
 
 from model import ProtoTSNet
 from autoencoder import RegularConvEncoder
 from artificial_datasets_DPL import ArtificialProtosDataset, ArtificialProtosDatasetRandomShift
+from train import train_prototsnet_DPL
 
 
 class ArtificialProtosQueries(DPLDataset):
@@ -66,7 +67,24 @@ net = ProtoTSNet(
     ts_sample_len=100,
     prototype_shape=(protos_per_class*num_classes, latent_features, 20),
     num_classes=num_classes,
-    prototype_activation_function='log'
+)
+
+train_loader = torch.utils.data.DataLoader(
+    dataset.train, batch_size=train_batch_size, shuffle=True,
+    num_workers=0, pin_memory=False)
+test_loader = torch.utils.data.DataLoader(
+    dataset.test, batch_size=test_batch_size, shuffle=False,
+    num_workers=0, pin_memory=False)
+
+# construct the model
+ptsnet = ProtoTSNet(
+    cnn_base=encoder,
+    num_features=num_features,
+    ts_sample_len=100,
+    proto_num=protos_per_class*num_classes,
+    latent_features=latent_features,
+    proto_len_latent=20,
+    num_classes=num_classes,
 )
 
 dpl_net = Network(net, "ptsnet", batching=False)
@@ -87,7 +105,9 @@ model.add_tensor_source("test", test_dataset)
 test_queries = ArtificialProtosQueries(test_dataset, "test")
 
 print("Training...")
-train = train_model(model, train_loader, 20, log_iter=100, profile=0)
+train = TrainObject(model)
+train.train(train_loader, 20, log_iter=100, profile=0)
+
 model.save_state('./snapshots/initial_model.pth')
 # train.logger.comment(json.dumps(model.get_hyperparameters()))
 # train.logger.comment(

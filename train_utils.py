@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 from enum import Enum
 
-EpochType = Enum('EpochType', 'WARM,JOINT,PUSH,LAST_LAYER')
+EpochType = Enum('EpochType', 'WARM,JOINT,PUSH')
 
 
 class BestModelCheckpointer:
