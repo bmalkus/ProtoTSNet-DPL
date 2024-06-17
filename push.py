@@ -79,11 +79,16 @@ def push_prototypes(dataloader,
 
     num_classes = prototype_network.num_classes
 
-    for push_iter, (search_batch_input, search_y) in enumerate(dataloader):
+    for push_iter, dl_batch in enumerate(dataloader):
         '''
         start_index_of_search keeps track of the index of the image
         assigned to serve as prototype
         '''
+        if len(dl_batch) == 2:
+            search_batch_input, search_y = dl_batch
+        else:
+            search_batch_input, search_y = dl_batch, None
+
         start_index_of_search_batch = push_iter * search_batch_size
 
         update_prototypes_on_batch(search_batch_input,

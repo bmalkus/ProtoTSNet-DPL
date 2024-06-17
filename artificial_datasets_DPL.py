@@ -47,6 +47,8 @@ class ArtificialProtosDatasetRandomShift():
         return len(self.data)
 
     def __getitem__(self, idx):
+        if isinstance(idx, int):
+            return torch.tensor(self.data[idx][0])
         return torch.tensor(self.data[int(idx[0])][0])
     
     def get_label(self, idx):
@@ -82,6 +84,8 @@ class ArtificialProtosDataset():
         return len(self.data)
 
     def __getitem__(self, idx):
+        if isinstance(idx, int):
+            return torch.tensor(self.data[idx][0])
         return torch.tensor(self.data[int(idx[0])][0])
     
     def get_label(self, idx):
