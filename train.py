@@ -594,12 +594,22 @@ class ProtoTSNetTrainer:
                 # n_correct += (predicted == target).sum().item()
                 n_examples += len(batch)
                 for r, q in results:
-                    if q.p == 1 and r.result[q.substitute().query] >= 0.5:
-                        n_correct += 1
-                        probab_for_positive.append(r.result[q.substitute().query].item())
-                    elif q.p == 0 and r.result[q.substitute().query] < 0.5:
-                        n_correct += 1
-                        probab_for_negative.append(r.result[q.substitute().query].item())
+                    expected = q.substitute().query
+                    if q.p == 1:
+                        probab_for_positive.append(r.result[expected].item())
+                        if r.result[expected] >= 0.5:
+                            n_correct += 1
+                    elif q.p == 0:
+                        probab_for_negative.append(r.result[expected].item())
+                        if r.result[expected] < 0.5:
+                            n_correct += 1
+                    if self.loss_uses_negatives:
+                        neg_proofs = [x for x in r if x != expected]
+                        for neg in neg_proofs:
+                            n_examples += 1
+                            probab_for_negative.append(r.result[neg].item())
+                            if r.result[neg] < 0.5:
+                                n_correct += 1
 
                 n_batches += 1
                 total_dpl_loss += dpl_loss.item()

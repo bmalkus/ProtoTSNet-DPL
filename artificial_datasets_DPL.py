@@ -2,6 +2,11 @@ import numpy as np
 from scipy import signal
 import torch
 import random
+import itertools
+
+from deepproblog.query import Query
+from deepproblog.dataset import Dataset as DPLDataset
+from problog.logic import Term, Constant
 
 class ArtificialProtosDatasetRandomShift():
     def __init__(self, N, num_feat=5, classes=3, feature_noise_power=0.1, class_specifics=None):
@@ -9,9 +14,12 @@ class ArtificialProtosDatasetRandomShift():
         x = np.linspace(0, 100, 100)
         if class_specifics is None:
             class_specifics = []
-            for _ in range(classes):
+            for i in range(classes):
                 features = random.sample(range(0, num_feat), np.random.randint(1, min(num_feat, 3)))
-                patterns = random.choices([signal.sawtooth, signal.square], k=len(features))
+                features.sort()
+                # patterns = random.choices([signal.sawtooth, signal.square], k=len(features))
+                signals = [signal.sawtooth, signal.square] if i % 2 == 0 else [signal.square, signal.sawtooth]
+                patterns = list(itertools.islice(itertools.cycle(signals), len(features)))
                 spec = {
                     'features': features,
                     'patterns': patterns
@@ -37,7 +45,7 @@ class ArtificialProtosDatasetRandomShift():
             for i, pattern in zip(class_spec['features'], class_spec['patterns']):
                 pattern_length = 30
                 pattern_end = patter_start + pattern_length
-                xs = x[0 if patter_start >= 0 else -patter_start:pattern_length if pattern_end <= 100 else 100 - patter_start]
+                xs = x[(0 if patter_start >= 0 else -patter_start):(pattern_length if pattern_end <= 100 else 100 - patter_start)]
                 ts[i, max(patter_start, 0):min(patter_start + pattern_length, 100)] = pattern(xs / 2)
             self.data.append((ts.astype('float32'), label))
             
@@ -90,3 +98,75 @@ class ArtificialProtosDataset():
     
     def get_label(self, idx):
         return self.data[idx][1]
+
+
+class Queries(DPLDataset):
+    def __init__(self, dataset: ArtificialProtosDataset, phase: str):
+        self.phase = phase
+        self.dataset = dataset
+        self.dataset_len = len(dataset)
+        self.num_classes = len(set([dataset.get_label(i) for i in range(self.dataset_len)]))
+        print(f'Detected number of classes in Queries: {self.num_classes}')
+
+    def to_query(self, i: int) -> Query:
+        ds_entry = i
+        cls_num = self.dataset.get_label(ds_entry)
+
+        ts_term = Term(f'ts{ds_entry}')
+        q = Query(
+            Term(
+                'is_class',
+                ts_term,
+                Term(f'c{cls_num}')
+            ),
+            {
+                ts_term: Term(
+                    "tensor",
+                    Term(
+                        self.phase,
+                        Constant(ds_entry),
+                    ),
+                )
+            }
+        )
+        return q
+
+    def __len__(self):
+        return self.dataset_len
+
+
+class QueriesWithNegatives(DPLDataset):
+    def __init__(self, dataset: ArtificialProtosDataset, phase: str):
+        self.phase = phase
+        self.dataset = dataset
+        self.dataset_len = len(dataset)
+        self.num_classes = len(set([dataset.get_label(i) for i in range(self.dataset_len)]))
+        print(f'Detected number of classes in QueriesWithNegatives: {self.num_classes}')
+
+    def to_query(self, i: int) -> Query:
+        ds_entry = i // self.num_classes
+        cls_num = i % self.num_classes
+        correct_cls = self.dataset.get_label(ds_entry)
+
+        ts_term = Term(f'ts{ds_entry}')
+        q = Query(
+            Term(
+                'is_class',
+                ts_term,
+                Term(f'c{cls_num}')
+            ),
+            {
+                ts_term: Term(
+                    "tensor",
+                    Term(
+                        self.phase,
+                        Constant(ds_entry),
+                    ),
+                )
+            },
+            p = float(cls_num == correct_cls)
+        )
+        return q
+
+    def __len__(self):
+        return self.dataset_len * self.num_classes
