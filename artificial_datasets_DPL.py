@@ -33,6 +33,8 @@ class ArtificialProtosDatasetRandomShift():
                     }
                 class_specifics.append(spec)
 
+        self.class_specifics = class_specifics
+
         for _ in range(N):
             label = np.random.randint(0, classes)
             ts = np.zeros((num_feat, 100))
@@ -166,7 +168,7 @@ class QueriesWithNegatives(DPLDataset):
             },
             p = float(cls_num == correct_cls)
         )
-        return q
+        return q, self.dataset[ds_entry]
 
     def __len__(self):
         return self.dataset_len * self.num_classes

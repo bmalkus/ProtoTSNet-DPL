@@ -123,9 +123,18 @@ class ProtoTSNet(nn.Module):
         if self.for_deepproblog:
             ret = prototype_activations[0, 0]
             ret = F.tanh(ret)
+            if not ret.requires_grad:
+                ret.requires_grad = True
             return torch.cat((ret, ))
         logits = self.last_layer(prototype_activations)
         return logits, min_distances
+
+    def min_distances(self, x):
+        distances = self.prototype_distances(x)
+        min_distances = -F.max_pool1d(-distances,
+                                      kernel_size=(distances.size()[2],))
+        min_distances = min_distances.view(-1, self.num_prototypes)
+        return min_distances
 
     def push_forward(self, x):
         '''this method is needed for the pushing operation'''

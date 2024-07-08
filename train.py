@@ -17,7 +17,8 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 import shutil
 from model import ProtoTSNet
-import json
+
+import numpy as np
 
 from deepproblog.model import Model as DPLModel, Term
 from deepproblog.train import TrainObject as DPLTrainObject
@@ -32,7 +33,7 @@ from contextlib import contextmanager
 
 from typing import Optional, List, Callable
 
-ProtoTSCoeffs = namedtuple('ProtoTSCoeffs', 'dpl_loss,l1_addon', defaults=(1,0))
+ProtoTSCoeffs = namedtuple('ProtoTSCoeffs', 'dpl_loss,l1_addon,clst,l1', defaults=(1,0,0,0))
 
 def experiment_setup(experiment_dir):
     os.makedirs(experiment_dir, exist_ok=True)
@@ -45,6 +46,7 @@ def experiment_setup(experiment_dir):
     shutil.copy(src=Path.cwd()/'push.py', dst=experiment_dir)
     shutil.copy(src=Path.cwd()/'train_utils.py', dst=experiment_dir)
     shutil.copy(src=Path.cwd()/'train.py', dst=experiment_dir)
+    shutil.copy(src=Path.cwd()/'proto_logic.pl', dst=experiment_dir)
     
     return experiment_dir
 
@@ -62,6 +64,7 @@ def train_prototsnet_DPL(
     num_warm_epochs=50,
     push_start_epoch=40,
     push_epochs=None,
+    num_logic_only_epochs=10,
     learning_rates=None,
     features_lr=1e-3,  # effective only if learning_rates is None
     lr_sched_setup=None,
@@ -128,6 +131,7 @@ def train_prototsnet_DPL(
             num_warm_epochs=num_warm_epochs,
             push_start_epoch=push_start_epoch,
             push_epochs=push_epochs,
+            num_logic_only_epochs=num_logic_only_epochs,
             coeffs=coeffs,
             learning_rates=learning_rates,
             lr_sched_setup=lr_sched_setup,
@@ -187,19 +191,22 @@ def best_stat_saver(stat_name, file_path, mode='min'):
 
 def get_verbose_logger():
     def verbose_log_epoch(t: ProtoTSNetTrainer, _):
-        t.log(f"epoch: {t.curr_epoch:3d} ({t.curr_epoch_type.name})")
-        t.log(f"    {'train accu:':25s} {t.latest_stat('accu_train')*100:.2f}%")
-        t.log(f"    {'train overall loss:':25s} {t.latest_stat('loss_train')}")
-        t.log(f"    {'train dpl cross ent:':25s} {t.latest_stat('dpl_loss_train')}")
-        t.log(f"    {'train avg probab true:':25s} {t.latest_stat('avg_probab_for_positive_train')}")
-        t.log(f"    {'train avg probab false:':25s} {t.latest_stat('avg_probab_for_negative_train')}")
-        # t.log(f"    {'test overall loss:':25s} {t.latest_stat('loss_test')}")
-        # t.log(f"    {'test cross_ent loss:':25s} {t.latest_stat('cross_ent_test')}")
-        # t.log(f"    {'cluster loss:':25s} {t.latest_stat('cluster_test')}")
-        # t.log(f"    {'separation loss:':25s} {t.latest_stat('separation_test')}")
-        # t.log(f"    {'avg separation loss:':25s} {t.latest_stat('avg_separation_test')}")
-        t.log(f"    {'l1_addon loss:':25s} {t.latest_stat('l1_addon_train')}")
-        t.log(f"    {'train time:':25s} {t.latest_stat('time_train')}")
+        t.log(f"Epoch stats:")
+        if t.curr_epoch_type != EpochType.PUSH:
+            t.log(f"    {'train accu:':25s} {t.latest_stat('accu_train')*100:.2f}%")
+            t.log(f"    {'train overall loss:':25s} {t.latest_stat('loss_train')}")
+            t.log(f"    {'train dpl cross ent:':25s} {t.latest_stat('dpl_loss_train')}")
+            t.log(f"    {'train avg probab true:':25s} {t.latest_stat('avg_probab_for_positive_train')}")
+            t.log(f"    {'train avg probab false:':25s} {t.latest_stat('avg_probab_for_negative_train')}")
+            # t.log(f"    {'test overall loss:':25s} {t.latest_stat('loss_test')}")
+            # t.log(f"    {'test cross_ent loss:':25s} {t.latest_stat('cross_ent_test')}")
+            # t.log(f"    {'cluster loss:':25s} {t.latest_stat('cluster_test')}")
+            # t.log(f"    {'separation loss:':25s} {t.latest_stat('separation_test')}")
+            # t.log(f"    {'avg separation loss:':25s} {t.latest_stat('avg_separation_test')}")
+            t.log(f"    {'cluster loss:':25s} {t.latest_stat('cluster_train')}")
+            t.log(f"    {'l1 loss:':25s} {t.latest_stat('l1_loss_train')}")
+            t.log(f"    {'l1_addon loss:':25s} {t.latest_stat('l1_addon_train')}")
+            t.log(f"    {'train time:':25s} {t.latest_stat('time_train')}")
         if t.latest_stat('did_run_test'):
             t.log(f"    {'test time:':25s} {t.latest_stat('time_test')}")
             t.log(f"    {'test accu:':25s} {t.latest_stat('accu_test')*100:.2f}%")
@@ -227,6 +234,7 @@ class ProtoTSNetTrainer:
         num_warm_epochs,
         push_start_epoch,
         push_epochs,
+        num_logic_only_epochs,
         coeffs: ProtoTSCoeffs,
         learning_rates,
         lr_sched_setup=None,
@@ -268,6 +276,7 @@ class ProtoTSNetTrainer:
         self.push_start = push_start_epoch
         self.did_st_push = False
         self.push_epochs = push_epochs
+        self.num_logic_only_epochs = num_logic_only_epochs
 
         self.coeffs = coeffs._asdict()
 
@@ -275,6 +284,7 @@ class ProtoTSNetTrainer:
         self.curr_epoch_type = None
         self.curr_epoch = 1
         self.curr_true_epoch = 1
+        self.logic_only_epoch = 1
         self.run_type_str = None  # 'train', 'test', 'val'
 
         self.log = log
@@ -350,6 +360,7 @@ class ProtoTSNetTrainer:
                 pass
 
     def _warm_epoch(self):
+        self.log(f"epoch: {self.curr_epoch:3d} (WARM)")
         with self.report_epoch_summary():
             self._set_epoch_type(EpochType.WARM)
 
@@ -358,6 +369,7 @@ class ProtoTSNetTrainer:
             self._single_test_round()
 
     def _joint_epoch(self):
+        self.log(f"epoch: {self.curr_epoch:3d} (JOINT)")
         with self.report_epoch_summary():
             self._set_epoch_type(EpochType.JOINT)
 
@@ -368,8 +380,16 @@ class ProtoTSNetTrainer:
             if self.joint_lr_scheduler is not None:
                 self.joint_lr_scheduler.step()
 
+    def _logic_only_epoch(self):
+        self.log(f"epoch: {self.curr_epoch:3d} (LOGIC ONLY: {self.logic_only_epoch}/{self.num_logic_only_epochs})")
+        with self.report_epoch_summary():
+            self._set_epoch_type(EpochType.LOGIC_ONLY)
+
+            self._single_train_round()
+            self._single_test_round()
+
     def _push_protos(self):
-        self.log(f"############# {'Pushing prototypes':25s} #############")
+        self.log(f"epoch: {self.curr_epoch:3d} (PUSH)")
         self.curr_true_epoch += 1
         with self.report_epoch_summary():
             # require_grad does not matter here, as we are not training, only pushing protos and testing
@@ -410,7 +430,7 @@ class ProtoTSNetTrainer:
     def _single_train_round(self):
         self.run_type_str = 'train'
         self.model.train()
-        self._train(self.train_loader, optimizer=self.optimizers[self.curr_epoch_type])
+        self._train(self.train_loader, optimizer=self.optimizers.get(self.curr_epoch_type))
         self.run_type_str = None
 
     def _single_test_round(self):
@@ -425,7 +445,10 @@ class ProtoTSNetTrainer:
         self.run_type_str = None
 
     def _test_round_cond(self):
-        return self.curr_epoch % 10 == 0
+        if self.curr_epoch_type == EpochType.LOGIC_ONLY:
+            return self.logic_only_epoch % 5 == 0
+        else:
+            return self.curr_epoch % 5 == 0
 
     def _st_push_condition(self):
         return self.curr_epoch >= self.push_start
@@ -534,15 +557,18 @@ class ProtoTSNetTrainer:
         n_correct = 0
         n_batches = 0
         total_dpl_loss = 0
-        # total_cluster_cost = 0
+        total_l1_loss = 0
+        total_cluster_cost = 0
         # separation cost is meaningful only for class_specific
         # total_separation_cost = 0
         # total_avg_separation_cost = 0
         total_loss = 0
         probab_for_positive = []
         probab_for_negative = []
+        self.model.optimizer.step_epoch()
 
         for batch in dataloader:
+            queries_batch, ts_batch = [q for q, _ in batch], [ts for _, ts in batch]
             # input = image.to(self.device)
             # target = label.to(self.device)
 
@@ -553,9 +579,9 @@ class ProtoTSNetTrainer:
                 # cross_entropy = torch.nn.functional.cross_entropy(output, target)
 
                 if self.loss_uses_negatives:
-                    dpl_loss, results = self.get_loss_with_negatives(batch, self.loss_function)
+                    dpl_loss, results = self.get_loss_with_negatives(queries_batch, self.loss_function)
                 else:
-                    dpl_loss, results = self.get_loss(batch, self.loss_function)
+                    dpl_loss, results = self.get_loss(queries_batch, self.loss_function)
 
                 if self.class_specific:
                     pass
@@ -582,17 +608,23 @@ class ProtoTSNetTrainer:
                     # total_separation_cost += separation_cost.item()
                     # total_avg_separation_cost += avg_separation_cost.item()
                 else:
-                    pass
-                    # min_distance, _ = torch.min(min_distances, dim=1)
-                    # cluster_cost = torch.mean(min_distance)
+                    # FIXME: only first element of batch is taken
+                    ts_batch = ts_batch[0]
+                    min_distances = self.ptsnet.min_distances(ts_batch.detach().clone())
+                    min_distance, _ = torch.min(min_distances, dim=1)
+                    cluster_cost = torch.mean(min_distance)
 
                 l1_addon = self.ptsnet.add_on_layers[0].weight.norm(p=1)
+
+                # print(self.model.tensor_parameters)
+                l1 = torch.norm(torch.stack(self.model.tensor_parameters), p=2)
+                # print(l1)
 
                 # evaluation statistics
                 # _, predicted = torch.max(output.data, 1)
                 # n_examples += target.size(0)
                 # n_correct += (predicted == target).sum().item()
-                n_examples += len(batch)
+                n_examples += len(queries_batch)
                 for r, q in results:
                     expected = q.substitute().query
                     if q.p == 1:
@@ -613,7 +645,7 @@ class ProtoTSNetTrainer:
 
                 n_batches += 1
                 total_dpl_loss += dpl_loss.item()
-                # total_cluster_cost += cluster_cost.item()
+                total_cluster_cost += cluster_cost.item()
 
             # compute gradient and do SGD step
             if self.class_specific:
@@ -628,15 +660,24 @@ class ProtoTSNetTrainer:
             else:
                 if self.coeffs is not None:
                     loss = (self.coeffs['dpl_loss'] * dpl_loss
-                        # + self.coeffs['clst'] * cluster_cost
+                        + self.coeffs['clst'] * cluster_cost
                         + self.coeffs['l1_addon'] * l1_addon)
                 else:
-                    loss = dpl_loss  # + 0.8 * cluster_cost
+                    loss = dpl_loss + 0.8 * cluster_cost
 
+            loss += self.coeffs['l1'] * l1
+            total_l1_loss += l1.item()
             total_loss += loss.item()
-            optimizer.zero_grad()
+            if optimizer is not None:
+                optimizer.zero_grad()
+            self.model.optimizer.zero_grad()
             loss.backward(retain_graph=True)
-            optimizer.step()
+            # if self.curr_epoch_type == EpochType.LOGIC_ONLY:
+            #     self.log(f"gradients: {self.model.optimizer._params_grad}")
+            if optimizer is not None:
+                optimizer.step()
+            # if self.curr_epoch_type != EpochType.LOGIC_ONLY:
+            self.model.optimizer.step()
 
             # del input
             # del target
@@ -649,7 +690,8 @@ class ProtoTSNetTrainer:
         self._add_stat('time', end - start)
         self._add_stat('loss', total_loss / n_batches)
         self._add_stat('dpl_loss', total_dpl_loss / n_batches)
-        # self._add_stat('cluster', total_cluster_cost / n_batches)
+        self._add_stat('l1_loss', total_l1_loss / n_batches)
+        self._add_stat('cluster', total_cluster_cost / n_batches)
         # if self.class_specific:
         #     self._add_stat('separation', total_separation_cost / n_batches)
         #     self._add_stat('avg_separation', total_avg_separation_cost / n_batches)
@@ -670,6 +712,7 @@ class ProtoTSNetTrainer:
         probabs_per_pred = defaultdict(list)
         probabs_per_true = defaultdict(list)
         for batch in dataloader:
+            batch = [q for q, _ in batch]
             for query in batch:
                 answer = self.model.solve([query])[0]
                 if len(answer.result) == 0:
@@ -712,6 +755,11 @@ class ProtoTSNetTrainer:
                 self.did_st_push = True
                 self._push_protos()
                 self._call_hooks()
+
+                self.log(f"############# {'Adjusting logic probabs':25s} #############")
+                for self.logic_only_epoch in range(1, self.num_logic_only_epochs+1):
+                    self._logic_only_epoch()
+                    self._call_hooks()
 
             if self.early_stopper and self.early_stopper(self):
                 self.log(f'Early stopping condition met on epoch {self.curr_epoch}, aborting')
