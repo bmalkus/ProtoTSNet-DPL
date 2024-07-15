@@ -17,13 +17,17 @@ from artificial_datasets_DPL import (
     QueriesWithNegatives
 )
 from train import train_prototsnet_DPL, ProtoTSCoeffs
+from datasets_utils import ds_load
+from pathlib import Path
 
 
 protos_per_class = 1
 latent_features = 32
-num_features = 5
+num_features = 2
+ts_len = 45
+proto_len_latent = 5
 # num_features = 3
-num_classes = 4
+num_classes = 15
 NOISE_POWER = 0.1
 
 print('Preparing ProtoTSNet...')
@@ -33,14 +37,15 @@ net = ProtoTSNet(
     cnn_base=encoder,
     for_deepproblog=True,
     num_features=num_features,
-    ts_sample_len=100,
+    ts_sample_len=ts_len,
     proto_num=protos_per_class*num_classes,
     latent_features=latent_features,
-    proto_len_latent=20,
+    proto_len_latent=proto_len_latent,
     num_classes=num_classes,
 )
 
 dpl_net = Network(net, "ptsnet", batching=False)
+dpl_net.cuda()
 # dpl_net.optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
 
 class MySGD(Optimizer):
@@ -80,24 +85,28 @@ class MySGD(Optimizer):
 print('Loading logic file...')
 model = Model("proto_logic.pl", [dpl_net])
 model.set_engine(ExactEngine(model))
-model.optimizer = MySGD(model, 1e-2)
+model.optimizer = MySGD(model, 1e-3)
 # model.set_engine(ApproximateEngine(model, 1, ApproximateEngine.geometric_mean, exploration=False))
 
-train_dataset = ArtificialProtosDatasetRandomShift(
-    200, num_feat=num_features, classes=num_classes, feature_noise_power=NOISE_POWER
-)
+libras = ds_load(Path('./datasets'), 'Libras')
+
+train_dataset = libras.train
+# train_dataset = ArtificialProtosDatasetRandomShift(
+#     200, num_feat=num_features, classes=num_classes, feature_noise_power=NOISE_POWER
+# )
 # train_dataset = ArtificialProtosDataset(1000)
 model.add_tensor_source("train", train_dataset)
 train_queries = QueriesWithNegatives(train_dataset, "train")
 train_loader = DPLDataLoader(train_queries, 1, True)
 
-test_dataset = ArtificialProtosDatasetRandomShift(
-    40,
-    num_feat=num_features,
-    classes=num_classes,
-    feature_noise_power=NOISE_POWER,
-    class_specifics=train_dataset.class_specifics,
-)
+test_dataset = libras.test
+# test_dataset = ArtificialProtosDatasetRandomShift(
+#     40,
+#     num_feat=num_features,
+#     classes=num_classes,
+#     feature_noise_power=NOISE_POWER,
+#     class_specifics=train_dataset.class_specifics,
+# )
 # test_dataset = ArtificialProtosDataset(200)
 model.add_tensor_source("test", test_dataset)
 test_queries = QueriesWithNegatives(test_dataset, "test")
@@ -111,16 +120,19 @@ print("Training...")
 trainer = train_prototsnet_DPL(
     dpl_model=model,
     ptsnet=net,
-    experiment_dir='./experiments/SimpleProtosWithShiftNoNoiseTrainableLogic4Classes',
-    device=torch.device('cpu'),
-    coeffs=ProtoTSCoeffs(1, clst=0.8, l1=1e-2),
+    experiment_dir='./experiments/LibrasTrainableLogic',
+    device=torch.device('cuda'),
+    coeffs=ProtoTSCoeffs(1, clst=0.8),
     train_dataset=train_dataset,
     train_loader=train_loader,
     test_loader=test_loader,
-    num_epochs=30,
+    num_epochs=100,
     num_warm_epochs=0,
-    push_start_epoch=10,
-    push_epochs=range(10, 1000, 10),
+    push_start_epoch=20,
+    push_epochs=range(20, 1000, 20),
+    pos_weight=1,
+    neg_weight=1/(2*(num_classes-1)),
+    # probab_threshold=1/num_classes,
     loss_uses_negatives=False,
     custom_hooks=[
         log_params

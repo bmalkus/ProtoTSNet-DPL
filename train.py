@@ -68,6 +68,10 @@ def train_prototsnet_DPL(
     learning_rates=None,
     features_lr=1e-3,  # effective only if learning_rates is None
     lr_sched_setup=None,
+    loss_function=None,
+    pos_weight=1,
+    neg_weight=1,
+    probab_threshold=0.5,
     loss_uses_negatives=False,
     custom_hooks=None,
     early_stopper=None,
@@ -135,6 +139,10 @@ def train_prototsnet_DPL(
             coeffs=coeffs,
             learning_rates=learning_rates,
             lr_sched_setup=lr_sched_setup,
+            loss_function=loss_function,
+            pos_weight=pos_weight,
+            neg_weight=neg_weight,
+            probab_threshold=probab_threshold,
             loss_uses_negatives=loss_uses_negatives,
             proto_save_dir=proto_dir,
             early_stopper=early_stopper,
@@ -239,6 +247,9 @@ class ProtoTSNetTrainer:
         learning_rates,
         lr_sched_setup=None,
         loss_function=None,
+        pos_weight=1,
+        neg_weight=1,
+        probab_threshold=0.5,
         loss_uses_negatives=False,
         proto_save_dir=None,
         early_stopper=None,
@@ -248,7 +259,7 @@ class ProtoTSNetTrainer:
         self.model = model
         self.ptsnet = ptsnet
         self.device = device
-        # self.ptsnet.to(self.device)
+        self.ptsnet.to(self.device)
 
         self.class_specific = False
 
@@ -266,6 +277,9 @@ class ProtoTSNetTrainer:
         if self.loss_function is None:
             self.loss_function = self.cross_entropy
         self.loss_uses_negatives = loss_uses_negatives
+        self.positive_weight = pos_weight
+        self.negative_weight = neg_weight
+        self.threshold = probab_threshold
 
         self.hooks = hooks
         if self.hooks is None:
@@ -456,7 +470,7 @@ class ProtoTSNetTrainer:
     def _warm_epoch_condition(self):
         return self.curr_epoch <= self.num_warm_epochs
 
-    def get_loss(self, batch: List[Query], loss_fn: Callable) -> torch.Tensor:
+    def get_loss(self, batch: List[Query], loss_fn: Callable, pos_weight, neg_weight) -> torch.Tensor:
         """
         Calculates and propagates the loss for a given batch of queries and loss function.
         :param batch: The batch of queries.
@@ -469,9 +483,11 @@ class ProtoTSNetTrainer:
             (results[i], batch[i]) for i in range(len(batch)) if len(results[i]) > 0
         ]
         for r, q in results:
-            total_loss += loss_fn(
+            curr_loss = loss_fn(
                 r, q.p, weight=1 / len(results), q=q.substitute().query
             )
+            # print(f'curr_loss: {curr_loss}, q.p: {q.p}, curr_loss * weight: {curr_loss * (pos_weight if q.p == 1 else neg_weight)}')
+            total_loss += curr_loss * (pos_weight if q.p == 1 else neg_weight)
         return total_loss, results
 
     def get_loss_with_negatives(
@@ -581,7 +597,7 @@ class ProtoTSNetTrainer:
                 if self.loss_uses_negatives:
                     dpl_loss, results = self.get_loss_with_negatives(queries_batch, self.loss_function)
                 else:
-                    dpl_loss, results = self.get_loss(queries_batch, self.loss_function)
+                    dpl_loss, results = self.get_loss(queries_batch, self.loss_function, self.positive_weight, self.negative_weight)
 
                 if self.class_specific:
                     pass
@@ -617,7 +633,10 @@ class ProtoTSNetTrainer:
                 l1_addon = self.ptsnet.add_on_layers[0].weight.norm(p=1)
 
                 # print(self.model.tensor_parameters)
-                l1 = torch.norm(torch.stack(self.model.tensor_parameters), p=2)
+                if self.model.tensor_parameters:
+                    l1 = torch.norm(torch.stack(self.model.tensor_parameters), p=2)
+                else:
+                    l1 = torch.tensor(0.0)
                 # print(l1)
 
                 # evaluation statistics
@@ -629,18 +648,20 @@ class ProtoTSNetTrainer:
                     expected = q.substitute().query
                     if q.p == 1:
                         probab_for_positive.append(r.result[expected].item())
-                        if r.result[expected] >= 0.5:
+                        if r.result[expected] >= self.threshold:
                             n_correct += 1
                     elif q.p == 0:
+                        # if type(r.result[expected]) is float:
+                        #     print(self.model.parameters)
                         probab_for_negative.append(r.result[expected].item())
-                        if r.result[expected] < 0.5:
+                        if r.result[expected] < self.threshold:
                             n_correct += 1
                     if self.loss_uses_negatives:
                         neg_proofs = [x for x in r if x != expected]
                         for neg in neg_proofs:
                             n_examples += 1
                             probab_for_negative.append(r.result[neg].item())
-                            if r.result[neg] < 0.5:
+                            if r.result[neg] < self.threshold:
                                 n_correct += 1
 
                 n_batches += 1
@@ -671,7 +692,7 @@ class ProtoTSNetTrainer:
             if optimizer is not None:
                 optimizer.zero_grad()
             self.model.optimizer.zero_grad()
-            loss.backward(retain_graph=True)
+            loss.backward()
             # if self.curr_epoch_type == EpochType.LOGIC_ONLY:
             #     self.log(f"gradients: {self.model.optimizer._params_grad}")
             if optimizer is not None:
@@ -705,7 +726,7 @@ class ProtoTSNetTrainer:
 
         start = time.time()
         
-        threshold = 0.5
+        threshold = self.threshold
         empty_answer = "false"
 
         confusion_matrix = ConfusionMatrix()

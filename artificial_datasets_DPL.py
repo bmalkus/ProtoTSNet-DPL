@@ -50,8 +50,6 @@ class ArtificialProtosDatasetRandomShift():
                 xs = x[(0 if patter_start >= 0 else -patter_start):(pattern_length if pattern_end <= 100 else 100 - patter_start)]
                 ts[i, max(patter_start, 0):min(patter_start + pattern_length, 100)] = pattern(xs / 2)
             self.data.append((ts.astype('float32'), label))
-            
-            
 
     def __len__(self):
         return len(self.data)
@@ -131,7 +129,7 @@ class Queries(DPLDataset):
                 )
             }
         )
-        return q
+        return q, self.dataset[ds_entry]
 
     def __len__(self):
         return self.dataset_len

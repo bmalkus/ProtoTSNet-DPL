@@ -125,6 +125,7 @@ class ProtoTSNet(nn.Module):
             ret = F.tanh(ret)
             if not ret.requires_grad:
                 ret.requires_grad = True
+            # print(ret, file=sys.stderr)
             return torch.cat((ret, ))
         logits = self.last_layer(prototype_activations)
         return logits, min_distances

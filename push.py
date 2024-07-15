@@ -219,7 +219,7 @@ def update_prototypes_on_batch(search_batch_input,
             
             # get the whole image
             original_closest_ts = search_batch_input[receptive_field_info[0]]
-            original_closest_ts = original_closest_ts.numpy()
+            original_closest_ts = original_closest_ts.clone().detach().cpu().numpy()
             original_closest_ts = np.transpose(original_closest_ts, (1, 0))
             original_ts_len = original_closest_ts.shape[0]
             
