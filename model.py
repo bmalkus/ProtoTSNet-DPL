@@ -7,6 +7,8 @@ from receptive_field import compute_proto_layer_rf_info_v2
 import itertools
 import sys
 
+from typing import List
+
 class ProtoTSNet(nn.Module):
 
     def __init__(self, cnn_base, for_deepproblog, num_features, ts_sample_len, proto_num, latent_features, proto_len_latent,
@@ -93,15 +95,13 @@ class ProtoTSNet(nn.Module):
 
         return distances
 
-    def prototype_distances(self, x, proto_num: int = None):
-        if self.for_deepproblog:
-            x.unsqueeze_(0)
+    def prototype_distances(self, x, proto_nums: List[int] = None):
         conv_features = self.conv_features(x)
         # TODO optimize for deepproblog
         distances = self._l2_convolution(conv_features)
-        if proto_num is None:
+        if proto_nums is None:
             return distances
-        return distances[:, proto_num:proto_num + 1, :]
+        return distances[:, proto_nums, :]
 
     def distance_2_similarity(self, distances):
         if self.prototype_activation_function == 'log':
@@ -111,22 +111,20 @@ class ProtoTSNet(nn.Module):
         else:
             return self.prototype_activation_function(distances)
 
-    def forward(self, x, proto: str = None):
-        proto_num = int(proto.functor[1:]) if proto is not None else None
-        distances = self.prototype_distances(x, proto_num)
+    def forward(self, x, protos: List[str] = None):
+        if len(protos) == self.num_prototypes:
+            protos = None
+        proto_nums = [int(proto.functor[1:]) for proto in protos] if protos is not None else None
+        distances = self.prototype_distances(x, proto_nums)
         # global min pooling
         min_distances = -F.max_pool1d(-distances,
                                       kernel_size=(distances.size()[2],))
-        if proto is None:
+        if protos is None:
             min_distances = min_distances.view(-1, self.num_prototypes)
         prototype_activations = self.distance_2_similarity(min_distances)
         if self.for_deepproblog:
-            ret = prototype_activations[0, 0]
-            ret = F.tanh(ret)
-            if not ret.requires_grad:
-                ret.requires_grad = True
-            # print(ret, file=sys.stderr)
-            return torch.cat((ret, ))
+            ret = F.tanh(prototype_activations[0])
+            return ret.view(-1, 1)
         logits = self.last_layer(prototype_activations)
         return logits, min_distances
 

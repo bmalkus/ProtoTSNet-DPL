@@ -44,7 +44,7 @@ net = ProtoTSNet(
     num_classes=num_classes,
 )
 
-dpl_net = Network(net, "ptsnet", batching=False)
+dpl_net = Network(net, "ptsnet", batching=True)
 dpl_net.cuda()
 # dpl_net.optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
 
@@ -96,8 +96,8 @@ train_dataset = libras.train
 # )
 # train_dataset = ArtificialProtosDataset(1000)
 model.add_tensor_source("train", train_dataset)
-train_queries = QueriesWithNegatives(train_dataset, "train")
-train_loader = DPLDataLoader(train_queries, 1, True)
+train_queries = Queries(train_dataset, "train")
+train_loader = DPLDataLoader(train_queries, 10, True)
 
 test_dataset = libras.test
 # test_dataset = ArtificialProtosDatasetRandomShift(
@@ -109,7 +109,7 @@ test_dataset = libras.test
 # )
 # test_dataset = ArtificialProtosDataset(200)
 model.add_tensor_source("test", test_dataset)
-test_queries = QueriesWithNegatives(test_dataset, "test")
+test_queries = Queries(test_dataset, "test")
 test_loader = DPLDataLoader(test_queries, 1, False)
 
 def log_params(trainer, _):
@@ -128,7 +128,7 @@ trainer = train_prototsnet_DPL(
     test_loader=test_loader,
     num_epochs=100,
     num_warm_epochs=0,
-    push_start_epoch=20,
+    push_start_epoch=40,
     push_epochs=range(20, 1000, 20),
     pos_weight=1,
     neg_weight=1/(2*(num_classes-1)),

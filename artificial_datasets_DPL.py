@@ -6,7 +6,7 @@ import itertools
 
 from deepproblog.query import Query
 from deepproblog.dataset import Dataset as DPLDataset
-from problog.logic import Term, Constant
+from problog.logic import Term, Constant, And, Not
 
 class ArtificialProtosDatasetRandomShift():
     def __init__(self, N, num_feat=5, classes=3, feature_noise_power=0.1, class_specifics=None):
@@ -115,7 +115,7 @@ class Queries(DPLDataset):
         ts_term = Term(f'ts{ds_entry}')
         q = Query(
             Term(
-                'is_class',
+                'excl_is_class',
                 ts_term,
                 Term(f'c{cls_num}')
             ),
@@ -170,3 +170,66 @@ class QueriesWithNegatives(DPLDataset):
 
     def __len__(self):
         return self.dataset_len * self.num_classes
+
+
+# class QueriesWithNegatives2(DPLDataset):
+#     def __init__(self, dataset: ArtificialProtosDataset, phase: str):
+#         self.phase = phase
+#         self.dataset = dataset
+#         self.dataset_len = len(dataset)
+#         self.num_classes = len(set([dataset.get_label(i) for i in range(self.dataset_len)]))
+#         print(f'Detected number of classes in QueriesWithNegatives: {self.num_classes}')
+
+#     def to_query(self, i: int) -> Query:
+#         ds_entry = i
+#         correct_cls = self.dataset.get_label(ds_entry)
+
+#         t = Term(
+#                 'is_class',
+#                 Term(
+#                     'tensor',
+#                     Term(
+#                         self.phase,
+#                         Constant(ds_entry),
+#                     ),
+#                 ),
+#                 Term(f'c0'),
+#             )
+
+#         if correct_cls != 0:
+#             t = Not("not", t)
+
+#         for cls_num in range(1, self.num_classes):
+#             new_t = Term(
+#                 'is_class',
+#                 Term(
+#                     'tensor',
+#                     Term(
+#                         self.phase,
+#                         Constant(ds_entry),
+#                     ),
+#                 ),
+#                 Term(f'c{cls_num}'),
+#             )
+#             if cls_num != correct_cls:
+#                 t = And(t, Not("not", new_t))
+#             else:
+#                 t = And(t, new_t)
+
+#         q = Query(
+#             t,
+#             {
+#                 Term(f'ts{ds_entry}'): Term(
+#                     "tensor",
+#                     Term(
+#                         self.phase,
+#                         Constant(ds_entry),
+#                     ),
+#                 )
+#             },
+#         )
+#         print(q)
+#         return q, self.dataset[ds_entry]
+
+#     def __len__(self):
+#         return self.dataset_len

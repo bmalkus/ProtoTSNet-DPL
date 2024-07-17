@@ -625,8 +625,7 @@ class ProtoTSNetTrainer:
                     # total_avg_separation_cost += avg_separation_cost.item()
                 else:
                     # FIXME: only first element of batch is taken
-                    ts_batch = ts_batch[0]
-                    min_distances = self.ptsnet.min_distances(ts_batch.detach().clone())
+                    min_distances = self.ptsnet.min_distances(ts_batch[0].view(1, *ts_batch[0].shape))
                     min_distance, _ = torch.min(min_distances, dim=1)
                     cluster_cost = torch.mean(min_distance)
 
