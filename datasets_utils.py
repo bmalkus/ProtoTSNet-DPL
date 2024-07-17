@@ -14,9 +14,10 @@ class TSCDataset():
     X: np.ndarray
     y: np.ndarray
 
-    def __init__(self, X, y):
+    def __init__(self, X, y, for_torch_dl=False):
         self.X = X
         self.y = y
+        self.for_torch_dl = for_torch_dl
 
     def __len__(self):
         return len(self.X)
@@ -25,12 +26,17 @@ class TSCDataset():
     #     return self.X[idx], self.y[idx]
 
     def __getitem__(self, idx):
+        if self.for_torch_dl:
+            return self.X[idx], self.y[idx]
         if isinstance(idx, int):
             return torch.tensor(self.X[idx]).cuda()
         return torch.tensor(self.X[int(idx[0])]).cuda()
     
     def get_label(self, idx):
         return self.y[idx]
+    
+    def get_for_torch_dl(self):
+        return TSCDataset(self.X, self.y, for_torch_dl=True)
 
 
 @dataclass

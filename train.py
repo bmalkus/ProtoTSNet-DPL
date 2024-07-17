@@ -33,7 +33,7 @@ from contextlib import contextmanager
 
 from typing import Optional, List, Callable
 
-ProtoTSCoeffs = namedtuple('ProtoTSCoeffs', 'dpl_loss,l1_addon,clst,l1', defaults=(1,0,0,0))
+ProtoTSCoeffs = namedtuple('ProtoTSCoeffs', 'dpl_loss,l1_addon,sep,clst,l1', defaults=(1,0,0,0,0))
 
 def experiment_setup(experiment_dir):
     os.makedirs(experiment_dir, exist_ok=True)
@@ -59,7 +59,7 @@ def train_prototsnet_DPL(
     train_dataset,
     train_loader: DataLoader,
     test_loader: DataLoader,
-    # class_specific,
+    class_specific,
     num_epochs=1000,
     num_warm_epochs=50,
     push_start_epoch=40,
@@ -130,7 +130,7 @@ def train_prototsnet_DPL(
             train_dataset,
             train_loader,
             test_loader,
-            # class_specific=class_specific,
+            class_specific=class_specific,
             num_epochs=num_epochs,
             num_warm_epochs=num_warm_epochs,
             push_start_epoch=push_start_epoch,
@@ -237,7 +237,7 @@ class ProtoTSNetTrainer:
         train_dataset,
         train_loader: DataLoader,
         test_loader: DataLoader,
-        # class_specific,
+        class_specific,
         num_epochs,
         num_warm_epochs,
         push_start_epoch,
@@ -261,7 +261,7 @@ class ProtoTSNetTrainer:
         self.device = device
         self.ptsnet.to(self.device)
 
-        self.class_specific = False
+        self.class_specific = class_specific
 
         self.train_dataset = train_dataset
         self.train_loader = train_loader
@@ -414,7 +414,7 @@ class ProtoTSNetTrainer:
             proto_bounds_filename_prefix = 'bounds'
 
             push.push_prototypes(
-                torch.utils.data.DataLoader(self.train_dataset, batch_size=self.train_loader.batch_size, shuffle=True),
+                torch.utils.data.DataLoader(self.train_dataset.get_for_torch_dl(), batch_size=self.train_loader.batch_size, shuffle=True),
                 prototype_network=self.ptsnet,
                 class_specific=self.class_specific,
                 preprocess_input_function=None,
@@ -576,23 +576,21 @@ class ProtoTSNetTrainer:
         total_l1_loss = 0
         total_cluster_cost = 0
         # separation cost is meaningful only for class_specific
-        # total_separation_cost = 0
-        # total_avg_separation_cost = 0
+        total_separation_cost = 0
+        total_avg_separation_cost = 0
         total_loss = 0
         probab_for_positive = []
         probab_for_negative = []
         self.model.optimizer.step_epoch()
 
         for batch in dataloader:
-            queries_batch, ts_batch = [q for q, _ in batch], [ts for _, ts in batch]
+            queries_batch, ts_batch, label = [q for q, *_ in batch], [ts for _, ts, _ in batch], [l for *_, l in batch]
             # input = image.to(self.device)
             # target = label.to(self.device)
 
             with torch.enable_grad():
-                # output, min_distances = self.ptsnet(input)
-
-                # compute loss
-                # cross_entropy = torch.nn.functional.cross_entropy(output, target)
+                # FIXME: only first element of batch is taken
+                min_distances = self.ptsnet.min_distances(ts_batch[0].view(1, *ts_batch[0].shape))
 
                 if self.loss_uses_negatives:
                     dpl_loss, results = self.get_loss_with_negatives(queries_batch, self.loss_function)
@@ -600,32 +598,29 @@ class ProtoTSNetTrainer:
                     dpl_loss, results = self.get_loss(queries_batch, self.loss_function, self.positive_weight, self.negative_weight)
 
                 if self.class_specific:
-                    pass
-                    # max_dist = (self.ptsnet.prototype_shape[1]
-                    #             * self.ptsnet.prototype_shape[2])
+                    max_dist = (self.ptsnet.prototype_shape[1]
+                                * self.ptsnet.prototype_shape[2])
 
-                    # # prototypes_of_correct_class is a tensor of shape batch_size * num_prototypes
-                    # # calculate cluster cost
-                    # prototypes_of_correct_class = torch.t(self.ptsnet.prototype_class_identity[:,label]).to(self.device)
-                    # inverted_distances, _ = torch.max((max_dist - min_distances) * prototypes_of_correct_class, dim=0)
-                    # cluster_cost = torch.mean(max_dist - inverted_distances)
+                    # prototypes_of_correct_class is a tensor of shape batch_size * num_prototypes
+                    # calculate cluster cost
+                    prototypes_of_correct_class = torch.t(self.ptsnet.prototype_class_identity[:,label]).to(self.device)
+                    inverted_distances, _ = torch.max((max_dist - min_distances) * prototypes_of_correct_class, dim=0)
+                    cluster_cost = torch.mean(max_dist - inverted_distances)
 
-                    # # calculate separation cost
-                    # prototypes_of_wrong_class = 1 - prototypes_of_correct_class
-                    # inverted_distances_to_nontarget_prototypes, _ = \
-                    #     torch.max((max_dist - min_distances) * prototypes_of_wrong_class, dim=0)
-                    # separation_cost = torch.mean(max_dist - inverted_distances_to_nontarget_prototypes)
+                    # calculate separation cost
+                    prototypes_of_wrong_class = 1 - prototypes_of_correct_class
+                    inverted_distances_to_nontarget_prototypes, _ = \
+                        torch.max((max_dist - min_distances) * prototypes_of_wrong_class, dim=0)
+                    separation_cost = torch.mean(max_dist - inverted_distances_to_nontarget_prototypes)
 
-                    # # calculate avg cluster cost
-                    # avg_separation_cost = \
-                    #     torch.sum(min_distances * prototypes_of_wrong_class, dim=0) / torch.sum(prototypes_of_wrong_class, dim=0)
-                    # avg_separation_cost = torch.mean(avg_separation_cost)
+                    # calculate avg cluster cost
+                    avg_separation_cost = \
+                        torch.sum(min_distances * prototypes_of_wrong_class, dim=0) / torch.sum(prototypes_of_wrong_class, dim=0)
+                    avg_separation_cost = torch.mean(avg_separation_cost)
 
-                    # total_separation_cost += separation_cost.item()
-                    # total_avg_separation_cost += avg_separation_cost.item()
+                    total_separation_cost += separation_cost.item()
+                    total_avg_separation_cost += avg_separation_cost.item()
                 else:
-                    # FIXME: only first element of batch is taken
-                    min_distances = self.ptsnet.min_distances(ts_batch[0].view(1, *ts_batch[0].shape))
                     min_distance, _ = torch.min(min_distances, dim=1)
                     cluster_cost = torch.mean(min_distance)
 
@@ -669,14 +664,13 @@ class ProtoTSNetTrainer:
 
             # compute gradient and do SGD step
             if self.class_specific:
-                pass
-                # if self.coeffs is not None:
-                #     loss = (self.coeffs['dpl_loss'] * dpl_loss
-                #         + self.coeffs['clst'] * cluster_cost
-                #         + self.coeffs['sep'] * separation_cost
-                #         + self.coeffs['l1_addon'] * l1_addon)
-                # else:
-                #     loss = dpl_loss + 0.8 * cluster_cost - 0.08 * separation_cost
+                if self.coeffs is not None:
+                    loss = (self.coeffs['dpl_loss'] * dpl_loss
+                        + self.coeffs['clst'] * cluster_cost
+                        + self.coeffs['sep'] * separation_cost
+                        + self.coeffs['l1_addon'] * l1_addon)
+                else:
+                    loss = dpl_loss + 0.8 * cluster_cost - 0.08 * separation_cost
             else:
                 if self.coeffs is not None:
                     loss = (self.coeffs['dpl_loss'] * dpl_loss
@@ -712,9 +706,9 @@ class ProtoTSNetTrainer:
         self._add_stat('dpl_loss', total_dpl_loss / n_batches)
         self._add_stat('l1_loss', total_l1_loss / n_batches)
         self._add_stat('cluster', total_cluster_cost / n_batches)
-        # if self.class_specific:
-        #     self._add_stat('separation', total_separation_cost / n_batches)
-        #     self._add_stat('avg_separation', total_avg_separation_cost / n_batches)
+        if self.class_specific:
+            self._add_stat('separation', total_separation_cost / n_batches)
+            self._add_stat('avg_separation', total_avg_separation_cost / n_batches)
         self._add_stat('accu', n_correct / n_examples)
         self._add_stat('avg_probab_for_positive', mean(probab_for_positive) if len(probab_for_positive) > 0 else 0)
         self._add_stat('avg_probab_for_negative', mean(probab_for_negative) if len(probab_for_negative) > 0 else 0)
@@ -732,7 +726,7 @@ class ProtoTSNetTrainer:
         probabs_per_pred = defaultdict(list)
         probabs_per_true = defaultdict(list)
         for batch in dataloader:
-            batch = [q for q, _ in batch]
+            batch = [q for q, *_ in batch]
             for query in batch:
                 answer = self.model.solve([query])[0]
                 if len(answer.result) == 0:

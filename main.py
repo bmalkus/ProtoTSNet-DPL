@@ -97,7 +97,7 @@ train_dataset = libras.train
 # train_dataset = ArtificialProtosDataset(1000)
 model.add_tensor_source("train", train_dataset)
 train_queries = Queries(train_dataset, "train")
-train_loader = DPLDataLoader(train_queries, 10, True)
+train_loader = DPLDataLoader(train_queries, 1, True)
 
 test_dataset = libras.test
 # test_dataset = ArtificialProtosDatasetRandomShift(
@@ -122,13 +122,14 @@ trainer = train_prototsnet_DPL(
     ptsnet=net,
     experiment_dir='./experiments/LibrasTrainableLogic',
     device=torch.device('cuda'),
-    coeffs=ProtoTSCoeffs(1, clst=0.8),
+    coeffs=ProtoTSCoeffs(1, clst=0.008),
     train_dataset=train_dataset,
     train_loader=train_loader,
     test_loader=test_loader,
+    class_specific=True,
     num_epochs=100,
     num_warm_epochs=0,
-    push_start_epoch=40,
+    push_start_epoch=20,
     push_epochs=range(20, 1000, 20),
     pos_weight=1,
     neg_weight=1/(2*(num_classes-1)),
