@@ -29,8 +29,8 @@ class TSCDataset():
         if self.for_torch_dl:
             return self.X[idx], self.y[idx]
         if isinstance(idx, int):
-            return torch.tensor(self.X[idx]).cuda()
-        return torch.tensor(self.X[int(idx[0])]).cuda()
+            return torch.tensor(self.X[idx])#.cuda()
+        return torch.tensor(self.X[int(idx[0])])#.cuda()
     
     def get_label(self, idx):
         return self.y[idx]

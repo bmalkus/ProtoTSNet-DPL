@@ -129,7 +129,7 @@ class Queries(DPLDataset):
                 )
             }
         )
-        return q, self.dataset[ds_entry], self.dataset.get_label(ds_entry)
+        return q, self.dataset[ds_entry], cls_num
 
     def __len__(self):
         return self.dataset_len

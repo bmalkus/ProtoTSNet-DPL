@@ -45,7 +45,7 @@ net = ProtoTSNet(
 )
 
 dpl_net = Network(net, "ptsnet", batching=True)
-dpl_net.cuda()
+# dpl_net.cuda()
 # dpl_net.optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
 
 class MySGD(Optimizer):
@@ -121,13 +121,13 @@ trainer = train_prototsnet_DPL(
     dpl_model=model,
     ptsnet=net,
     experiment_dir='./experiments/LibrasTrainableLogic',
-    device=torch.device('cuda'),
-    coeffs=ProtoTSCoeffs(1, clst=0.008),
+    device=torch.device('cpu'),
+    coeffs=ProtoTSCoeffs(1, clst=0.8),
     train_dataset=train_dataset,
     train_loader=train_loader,
     test_loader=test_loader,
-    class_specific=True,
-    num_epochs=100,
+    class_specific=False,
+    num_epochs=10,
     num_warm_epochs=0,
     push_start_epoch=20,
     push_epochs=range(20, 1000, 20),
