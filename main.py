@@ -85,12 +85,12 @@ class MySGD(Optimizer):
 print('Loading logic file...')
 model = Model("proto_logic.pl", [dpl_net])
 model.set_engine(ExactEngine(model))
-model.optimizer = MySGD(model, 1e-3)
+model.optimizer = MySGD(model, 3e-3)
 # model.set_engine(ApproximateEngine(model, 1, ApproximateEngine.geometric_mean, exploration=False))
 
-libras = ds_load(Path('./datasets'), 'Libras')
+libras_train, libras_test = ds_load(Path('./datasets'), 'Libras')
 
-train_dataset = libras.train
+train_dataset = libras_train
 # train_dataset = ArtificialProtosDatasetRandomShift(
 #     200, num_feat=num_features, classes=num_classes, feature_noise_power=NOISE_POWER
 # )
@@ -99,7 +99,7 @@ model.add_tensor_source("train", train_dataset)
 train_queries = Queries(train_dataset, "train")
 train_loader = DPLDataLoader(train_queries, 1, True)
 
-test_dataset = libras.test
+test_dataset = libras_test
 # test_dataset = ArtificialProtosDatasetRandomShift(
 #     40,
 #     num_feat=num_features,
@@ -126,13 +126,14 @@ trainer = train_prototsnet_DPL(
     train_dataset=train_dataset,
     train_loader=train_loader,
     test_loader=test_loader,
-    class_specific=False,
-    num_epochs=10,
+    class_specific=True,
+    num_epochs=100,
     num_warm_epochs=0,
-    push_start_epoch=20,
-    push_epochs=range(20, 1000, 20),
+    push_start_epoch=60,
+    push_epochs=range(0, 1000, 30),
     pos_weight=1,
     neg_weight=1/(2*(num_classes-1)),
+    lr_sched_setup=(lambda opt: torch.optim.lr_scheduler.CyclicLR(opt, base_lr=1e-4, max_lr=3e-2, step_size_up=10, step_size_down=20, mode='exp_range', gamma=0.99, cycle_momentum=False)),
     # probab_threshold=1/num_classes,
     loss_uses_negatives=False,
     custom_hooks=[

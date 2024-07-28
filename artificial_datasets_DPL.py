@@ -166,7 +166,7 @@ class QueriesWithNegatives(DPLDataset):
             },
             p = float(cls_num == correct_cls)
         )
-        return q, self.dataset[ds_entry]
+        return q, self.dataset[ds_entry], correct_cls
 
     def __len__(self):
         return self.dataset_len * self.num_classes

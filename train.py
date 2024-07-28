@@ -60,11 +60,11 @@ def train_prototsnet_DPL(
     train_loader: DataLoader,
     test_loader: DataLoader,
     class_specific,
+    num_warm_epochs,
+    push_start_epoch,
+    push_epochs,
+    num_logic_only_epochs,
     num_epochs=1000,
-    num_warm_epochs=50,
-    push_start_epoch=40,
-    push_epochs=None,
-    num_logic_only_epochs=10,
     learning_rates=None,
     features_lr=1e-3,  # effective only if learning_rates is None
     lr_sched_setup=None,
@@ -75,9 +75,10 @@ def train_prototsnet_DPL(
     loss_uses_negatives=False,
     custom_hooks=None,
     early_stopper=None,
-    log=print,
+    log=None
 ):
     save_files = True if experiment_dir is not None else False
+    logclose = lambda: None
     if save_files:
         if not isinstance(experiment_dir, Path):
             experiment_dir = Path(experiment_dir)
@@ -86,11 +87,12 @@ def train_prototsnet_DPL(
         os.makedirs(models_dir, exist_ok=True)
         proto_dir = experiment_dir / 'protos'
         os.makedirs(proto_dir, exist_ok=True)
-        log, logclose = create_logger(experiment_dir / "log.txt", display=True)
+        if log is None:
+            log, logclose = create_logger(experiment_dir / "log.txt", display=True)
     else:
         models_dir = None
         proto_dir = None
-        log, logclose = print, lambda: None
+        log = print
 
     if learning_rates is None:
         learning_rates = {
@@ -104,9 +106,6 @@ def train_prototsnet_DPL(
                 'prototype_vectors': 1e-3
             }
         }
-
-    if push_epochs is None:
-        push_epochs = range(0, num_epochs, 20)
 
     try:
         params = {
@@ -209,9 +208,10 @@ def get_verbose_logger():
             # t.log(f"    {'test overall loss:':25s} {t.latest_stat('loss_test')}")
             # t.log(f"    {'test cross_ent loss:':25s} {t.latest_stat('cross_ent_test')}")
             # t.log(f"    {'cluster loss:':25s} {t.latest_stat('cluster_test')}")
-            # t.log(f"    {'separation loss:':25s} {t.latest_stat('separation_test')}")
             # t.log(f"    {'avg separation loss:':25s} {t.latest_stat('avg_separation_test')}")
             t.log(f"    {'cluster loss:':25s} {t.latest_stat('cluster_train')}")
+            if t.class_specific:
+                t.log(f"    {'separation loss:':25s} {t.latest_stat('separation_train')}")
             t.log(f"    {'l1 loss:':25s} {t.latest_stat('l1_loss_train')}")
             t.log(f"    {'l1_addon loss:':25s} {t.latest_stat('l1_addon_train')}")
             t.log(f"    {'train time:':25s} {t.latest_stat('time_train')}")
@@ -268,6 +268,7 @@ class ProtoTSNetTrainer:
         self.test_loader = test_loader
 
         self.optimizers = {}
+        self.joint_lr_scheduler = None
 
         self.proto_save_dir = proto_save_dir
 
@@ -302,8 +303,6 @@ class ProtoTSNetTrainer:
         self.run_type_str = None  # 'train', 'test', 'val'
 
         self.log = log
-
-        self.joint_lr_scheduler = None
 
         self._setup_optimizers(learning_rates, lr_sched_setup)
 

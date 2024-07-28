@@ -1,13 +1,10 @@
-from sklearn.preprocessing import LabelEncoder
-from scipy.io.arff import loadarff
-from typing import Union, List, Dict
-from dataclasses import dataclass
-
-from sklearn.model_selection import train_test_split
+from typing import Tuple
 
 import numpy as np
-
 import torch
+from scipy.io.arff import loadarff
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
 
 class TSCDataset():
@@ -21,9 +18,6 @@ class TSCDataset():
 
     def __len__(self):
         return len(self.X)
-
-    # def __getitem__(self, idx):
-    #     return self.X[idx], self.y[idx]
 
     def __getitem__(self, idx):
         if self.for_torch_dl:
@@ -39,26 +33,18 @@ class TSCDataset():
         return TSCDataset(self.X, self.y, for_torch_dl=True)
 
 
-@dataclass
-class TrainTestDS:
-    name: str
-    train: TSCDataset
-    test: TSCDataset
-    val: TSCDataset = None
-
-
 def transform_ts_data(X, scaler):
     for i in range(X.shape[1]):
         X[:, i, :] = scaler.fit_transform(X[:, i, :])
     return X
 
-def load_arff_dataset(datasets_path, dataset_name, train_size=None, scaler=None):
+def ds_load(datasets_path, dataset_name, train_size=None, scaler=None) -> Tuple[TSCDataset, TSCDataset]:
     train_file = datasets_path / dataset_name / f'{dataset_name}_TRAIN.arff'
     test_file = datasets_path / dataset_name / f'{dataset_name}_TEST.arff'
     label_encoder = LabelEncoder()
 
     def arff_to_numpy(file_path):
-        data, meta = loadarff(file_path)
+        data, _ = loadarff(file_path)
         X, y = [], []
         for row in data:
             x, label = row
@@ -83,25 +69,4 @@ def load_arff_dataset(datasets_path, dataset_name, train_size=None, scaler=None)
         transform_ts_data(trainX, scaler)
         transform_ts_data(testX, scaler)
 
-    return TrainTestDS(dataset_name, TSCDataset(trainX, trainy), TSCDataset(testX, testy))
-
-
-def ds_load(datasets_path, ds_or_lst, train_size=None, scaler=None) -> Union[TrainTestDS, Dict[str, TrainTestDS]]:
-    # scaler is assumed to reset its state when calling fit_transform/fit
-    def load_ds(ds):
-        return (ds, load_arff_dataset(datasets_path, ds, train_size, scaler))
-
-    ds_names = ds_or_lst
-    if not isinstance(ds_names, (list, tuple)):
-        ds_names = [ds_names]
-
-    # with _tqdm_joblib(tqdm(desc="Loading datasets", total=len(ds_names))) as progress_bar:
-    #     results = Parallel(n_jobs=32)(delayed(load_ds)(ds) for ds in ds_names)
-    results = [load_ds(ds) for ds in ds_names]
-
-    results = dict(results)
-
-    if not isinstance(ds_or_lst, (list, tuple)):
-        return results[ds_or_lst]
-    else:
-        return results
+    return TSCDataset(trainX, trainy), TSCDataset(testX, testy)

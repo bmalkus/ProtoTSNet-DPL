@@ -11,8 +11,19 @@ from typing import List
 
 class ProtoTSNet(nn.Module):
 
-    def __init__(self, cnn_base, for_deepproblog, num_features, ts_sample_len, proto_num, latent_features, proto_len_latent,
-                 num_classes, init_weights=True, prototype_activation_function='log'):
+    def __init__(
+        self,
+        cnn_base,
+        for_deepproblog,
+        num_features,
+        ts_sample_len,
+        proto_num,
+        latent_features,
+        proto_len_latent,
+        num_classes,
+        init_weights=True,
+        prototype_activation_function='log',
+    ):
 
         super(ProtoTSNet, self).__init__()
         self.features = cnn_base
@@ -76,7 +87,7 @@ class ProtoTSNet(nn.Module):
         x = self.features(x)
         x = self.add_on_layers(x)
         return x
-    
+
     def _l2_convolution(self, x):
         # apply self.prototype_vectors as l2-convolution filters on input x
         x2 = x ** 2
